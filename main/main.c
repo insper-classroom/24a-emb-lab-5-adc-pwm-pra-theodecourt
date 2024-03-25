@@ -19,27 +19,35 @@ const uint ADC_PIN_Y = 27; // GPIO 27, que é o canal ADC 1
 QueueHandle_t xQueueAdc;
 
 typedef struct {
-    char axis;
+    int axis;
     int val;
 } adc_reading_t;
 
 void x_task(void *params) {
-    adc_reading_t x_reading = {.axis = 'X'};
+    adc_reading_t x_reading = {.axis = 0};
     
     while (1) {
         adc_select_input(0);  // Seleciona o canal ADC para o eixo X (GP26 = ADC0)
-        x_reading.val = adc_read();  // Lê o valor ADC do eixo X
+        if ((adc_read() - 2047) / 8 > -30 && (adc_read() - 2047) / 8 < 30) {
+            x_reading.val = 0;
+        } else {
+            x_reading.val = (adc_read() - 2047) / 8;  // Lê o valor ADC do eixo X
+        }
         xQueueSend(xQueueAdc, &x_reading, portMAX_DELAY);  // Envia a leitura para a fila
         vTaskDelay(pdMS_TO_TICKS(100));  // Atraso para desacoplamento das tarefas
     }
 }
 
 void y_task(void *params) {
-    adc_reading_t y_reading = {.axis = 'Y'};
+    adc_reading_t y_reading = {.axis = 1};
     
     while (1) {
         adc_select_input(1);  // Seleciona o canal ADC para o eixo Y (GP27 = ADC1)
-        y_reading.val = adc_read();  // Lê o valor ADC do eixo Y
+        if ((adc_read() - 2047) / 8 > -30 && (adc_read() - 2047) / 8 < 30) {
+            y_reading.val = 0;
+        } else {
+            y_reading.val = (adc_read() - 2047) / 8;  // Lê o valor ADC do eixo X
+        }
         xQueueSend(xQueueAdc, &y_reading, portMAX_DELAY);  // Envia a leitura para a fila
         vTaskDelay(pdMS_TO_TICKS(100));  // Atraso para desacoplamento das tarefas
     }
@@ -50,10 +58,20 @@ void uart_task(void *params) {
     
     while (1) {
         if (xQueueReceive(xQueueAdc, &reading, portMAX_DELAY)) {
-            // Imprime os valores no terminal
-            printf("Eixo %c: %d\n", reading.axis, reading.val);
+            write_package(reading);
         }
     }
+}
+
+void write_package(adc_reading_t data) {
+    int val = data.val;
+    int msb = val >> 8;
+    int lsb = val & 0xFF ;
+
+    uart_putc_raw(uart0, data.axis);
+    uart_putc_raw(uart0, lsb);
+    uart_putc_raw(uart0, msb);
+    uart_putc_raw(uart0, -1);
 }
 
 int main() {
